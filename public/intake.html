@@ -255,29 +255,139 @@ function updateRequiredMeter(){
   const bar=document.getElementById('requiredMeter'); if(bar) bar.style.width=pct+'%';
   const status=document.getElementById('requiredStatus'); if(status) status.textContent=`${complete}/${names.length} required fields complete`;
 }
-function validateStep(){
-  const fields=[...document.querySelectorAll('#stepContent input[required],#stepContent select[required],#stepContent textarea[required]')];
-  const checkedNames=new Set();
+function clearValidationErrors(){
+  document.querySelectorAll('.error-text').forEach(e => e.remove());
+  document.querySelectorAll('#stepContent input, #stepContent select, #stepContent textarea').forEach(f => {
+    f.style.borderColor = '#cfd8d3';
+    f.style.backgroundColor = '#fff';
+  });
+}
+
+function showFieldError(field, message){
+  field.style.borderColor = '#d92d20';
+  field.style.backgroundColor = '#fff5f5';
+
+  const wrapper =
+    field.closest('.field') ||
+    field.closest('.row-ack') ||
+    field.closest('.upload') ||
+    field.parentElement;
+
+  if(wrapper && !wrapper.querySelector('.error-text')){
+    const error = document.createElement('div');
+    error.className = 'error-text';
+    error.textContent = message;
+    error.style.color = '#d92d20';
+    error.style.fontSize = '13px';
+    error.style.fontWeight = '700';
+    error.style.marginTop = '6px';
+    error.style.lineHeight = '1.4';
+    wrapper.appendChild(error);
+  }
+}
+
+function validateStep(showAlert=true){
+  clearValidationErrors();
+
+  const fields = [
+    ...document.querySelectorAll(
+      '#stepContent input[required], #stepContent select[required], #stepContent textarea[required]'
+    )
+  ];
+
+  let firstInvalid = null;
+  const checkedNames = new Set();
+
   for(const f of fields){
     if(checkedNames.has(f.name)) continue;
     checkedNames.add(f.name);
-    if(f.type==='radio'||f.type==='checkbox'){
-      if(!document.querySelector(`[name="${f.name}"]:checked`)){
-        f.scrollIntoView({behavior:'smooth',block:'center'});
-        alert('Please complete all required fields before continuing.');
-        return false;
+
+    let isValid = true;
+    let message = 'This field is required.';
+
+    if(f.type === 'radio' || f.type === 'checkbox'){
+      const checked = document.querySelector(`#stepContent [name="${CSS.escape(f.name)}"]:checked`);
+      if(!checked){
+        isValid = false;
+        message = 'Please select or check this required item.';
       }
-    }else if(!String(f.value).trim()){
-      f.focus();
-      f.style.borderColor='#d92d20';
-      setTimeout(()=>f.style.borderColor='#cfd8d3',1800);
-      alert('Please complete all required fields before continuing.');
-      return false;
+    } else if(f.type === 'file'){
+      if(!f.files || f.files.length === 0){
+        isValid = false;
+        message = 'Please upload the required document.';
+      }
+    } else {
+      const value = String(f.value || '').trim();
+
+      if(!value){
+        isValid = false;
+      }
+
+      if(isValid && f.type === 'email'){
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if(!emailPattern.test(value)){
+          isValid = false;
+          message = 'Please enter a valid email address.';
+        }
+      }
+
+      if(isValid && f.type === 'tel'){
+        const digits = value.replace(/\D/g, '');
+        if(digits.length < 10){
+          isValid = false;
+          message = 'Please enter a valid phone number.';
+        }
+      }
+    }
+
+    if(!isValid){
+      if(!firstInvalid) firstInvalid = f;
+      showFieldError(f, message);
     }
   }
+
+  if(firstInvalid){
+    firstInvalid.scrollIntoView({ behavior:'smooth', block:'center' });
+    setTimeout(() => {
+      try { firstInvalid.focus(); } catch(e) {}
+    }, 250);
+
+    if(showAlert){
+      alert('Please complete all required fields marked with * before continuing.');
+    }
+
+    return false;
+  }
+
   return true;
 }
+
+function validateAllStepsBeforeSubmit(){
+  collect();
+
+  const originalStep = current;
+
+  for(let i = 0; i < steps.length; i++){
+    current = i;
+    render();
+
+    if(!validateStep(false)){
+      localStorage.setItem('edenIntakeCurrentStep', String(current));
+      alert(`Please complete all required fields in Step ${i + 1}: ${steps[i].title}.`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return false;
+    }
+
+    collect();
+  }
+
+  current = originalStep;
+  render();
+  return true;
+}
+
 async function submitFinal(){
+  if(!validateAllStepsBeforeSubmit()) return;
   collect();
 
   const clientName =
