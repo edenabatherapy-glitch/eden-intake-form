@@ -363,27 +363,9 @@ function validateStep(showAlert=true){
 }
 
 function validateAllStepsBeforeSubmit(){
-  collect();
-
-  const originalStep = current;
-
-  for(let i = 0; i < steps.length; i++){
-    current = i;
-    render();
-
-    if(!validateStep(false)){
-      localStorage.setItem('edenIntakeCurrentStep', String(current));
-      alert(`Please complete all required fields in Step ${i + 1}: ${steps[i].title}.`);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return false;
-    }
-
-    collect();
-  }
-
-  current = originalStep;
-  render();
-  return true;
+  // Only validate the step the client is currently viewing.
+  // Earlier steps were already validated when the client clicked Next Step.
+  return validateStep(true);
 }
 
 async function submitFinal(){
@@ -395,7 +377,8 @@ async function submitFinal(){
     data.client_name ||
     data.childName ||
     data.legalGlobalName ||
-    "";
+    data.finalName ||
+    "Unknown Client";
 
   const email =
     data.email ||
@@ -405,34 +388,64 @@ async function submitFinal(){
   const phone =
     data.phone ||
     data.parentPhone ||
+    data.emergencyPhone ||
     "";
+
+  const payload = {
+    client_name: String(clientName || ""),
+    email: String(email || ""),
+    phone: String(phone || ""),
+    form_data: {
+      ...data,
+      submitted_at: new Date().toISOString(),
+      source: "eden-intake-form"
+    }
+  };
 
   const supabaseUrl = "https://jwmrxzxsfxyzprilkrqg.supabase.co";
   const supabaseKey = "sb_publishable_HrBNfWjfLJ2r4NfDKq9Jrw__MUx2tz4";
 
-  const client = supabase.createClient(supabaseUrl, supabaseKey);
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/intake_submissions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": supabaseKey,
+        "Authorization": `Bearer ${supabaseKey}`,
+        "Prefer": "return=representation"
+      },
+      body: JSON.stringify(payload)
+    });
 
-  const { error } = await client
-    .from("intake_submissions")
-    .insert([
-      {
-        client_name: clientName,
-        email: email,
-        phone: phone,
-        form_data: data
-      }
-    ]);
+    const responseText = await response.text();
 
-  if (error) {
-    console.error(error);
-    alert("Submission failed. Please try again.");
-    return;
+    if(!response.ok){
+      console.error("Supabase insert failed:", response.status, responseText);
+      let message = responseText;
+      try {
+        const parsed = JSON.parse(responseText);
+        message = parsed.message || parsed.error || responseText;
+      } catch(e) {}
+
+      alert(
+        "Submission failed. Supabase says: " +
+        message +
+        "\n\nPlease screenshot this message if it happens again."
+      );
+      return;
+    }
+
+    localStorage.removeItem("edenIntakeData");
+    localStorage.removeItem("edenIntakeCurrentStep");
+
+    alert("✅ Intake form submitted successfully.");
+  } catch(error) {
+    console.error("Submission network error:", error);
+    alert(
+      "Submission failed because the browser could not reach Supabase. " +
+      "Please check internet connection and try again."
+    );
   }
-
-  localStorage.removeItem("edenIntakeData");
-  localStorage.removeItem("edenIntakeCurrentStep");
-
-  alert("✅ Intake form submitted successfully.");
 }
 document.getElementById('nextBtn').onclick=()=>{collect();if(!validateStep())return;if(current<5){current++;render();scrollTo(0,0)}else submitFinal()};document.getElementById('prevBtn').onclick=()=>{collect();if(current>0){current--;render();scrollTo(0,0)}};document.getElementById('saveBtn').onclick=()=>{collect();showSaveMessage()};
 function showSaveMessage(){let b=document.getElementById('saveMessage');if(!b){b=document.createElement('div');b.id='saveMessage';Object.assign(b.style,{position:'fixed',right:'30px',bottom:'30px',background:'#eef7f0',border:'1px solid #8cc495',color:'#064b24',padding:'18px 22px',borderRadius:'12px',boxShadow:'0 8px 24px rgba(0,0,0,.12)',zIndex:'9999',fontWeight:'800'});document.body.appendChild(b)}b.innerHTML='✓ Your intake form has been saved. You can close this page and continue later on this browser.';b.style.display='block';setTimeout(()=>b.style.display='none',5000)}
