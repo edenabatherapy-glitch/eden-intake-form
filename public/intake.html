@@ -372,64 +372,34 @@ async function submitFinal(){
   if(!validateAllStepsBeforeSubmit()) return;
   collect();
 
-  const clientName =
-    data.parentName ||
-    data.client_name ||
-    data.childName ||
-    data.legalGlobalName ||
-    data.finalName ||
-    "Unknown Client";
+  const submitButton = document.getElementById('nextBtn');
+  if(submitButton){
+    submitButton.disabled = true;
+    submitButton.textContent = "Submitting...";
+  }
 
-  const email =
-    data.email ||
-    data.parentEmail ||
-    "";
-
-  const phone =
-    data.phone ||
-    data.parentPhone ||
-    data.emergencyPhone ||
-    "";
-
-  const payload = {
-    client_name: String(clientName || ""),
-    email: String(email || ""),
-    phone: String(phone || ""),
-    form_data: {
-      ...data,
-      submitted_at: new Date().toISOString(),
-      source: "eden-intake-form"
-    }
+  const submissionData = {
+    ...data,
+    submitted_at: new Date().toISOString(),
+    source: "eden-intake-form"
   };
 
-  const supabaseUrl = "https://jwmrxzxsfxyzprilkrqg.supabase.co";
-  const supabaseKey = "sb_publishable_HrBNfWjfLJ2r4NfDKq9Jrw__MUx2tz4";
-
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/intake_submissions`, {
+    const response = await fetch("/api/submit-intake", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "apikey": supabaseKey,
-        "Authorization": `Bearer ${supabaseKey}`,
-        "Prefer": "return=representation"
+        "Content-Type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(submissionData)
     });
 
-    const responseText = await response.text();
+    const result = await response.json().catch(() => ({}));
 
-    if(!response.ok){
-      console.error("Supabase insert failed:", response.status, responseText);
-      let message = responseText;
-      try {
-        const parsed = JSON.parse(responseText);
-        message = parsed.message || parsed.error || responseText;
-      } catch(e) {}
-
+    if(!response.ok || !result.success){
+      console.error("Intake API submit failed:", response.status, result);
       alert(
-        "Submission failed. Supabase says: " +
-        message +
+        "Submission failed. Server says: " +
+        (result.error || "Unknown server error") +
         "\n\nPlease screenshot this message if it happens again."
       );
       return;
@@ -438,13 +408,18 @@ async function submitFinal(){
     localStorage.removeItem("edenIntakeData");
     localStorage.removeItem("edenIntakeCurrentStep");
 
-    alert("✅ Intake form submitted successfully.");
+    alert("✅ Intake form submitted successfully. Eden ABA Therapy has been notified by email.");
   } catch(error) {
     console.error("Submission network error:", error);
     alert(
-      "Submission failed because the browser could not reach Supabase. " +
+      "Submission failed because the browser could not reach the secure intake server. " +
       "Please check internet connection and try again."
     );
+  } finally {
+    if(submitButton){
+      submitButton.disabled = false;
+      submitButton.textContent = "Review & Submit ✓";
+    }
   }
 }
 document.getElementById('nextBtn').onclick=()=>{collect();if(!validateStep())return;if(current<5){current++;render();scrollTo(0,0)}else submitFinal()};document.getElementById('prevBtn').onclick=()=>{collect();if(current>0){current--;render();scrollTo(0,0)}};document.getElementById('saveBtn').onclick=()=>{collect();showSaveMessage()};
